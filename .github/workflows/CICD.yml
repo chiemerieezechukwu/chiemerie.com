@@ -1,0 +1,215 @@
+name: Build and Deploy Pipeline
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+      - develop
+  workflow_dispatch:
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Linting started
+        run: echo "linting"
+
+  build:
+    name: Build Artifact
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set Node version
+        uses: actions/setup-node@v2
+        with:
+          node-version: 17
+
+      - name: Build App
+        run: npm i && npm run build
+
+      - name: Archive build output
+        uses: actions/upload-artifact@v2
+        with:
+          name: build
+          path: build
+          retention-days: 1
+
+  deploy-dev:
+    name: Deploy to dev
+    runs-on: ubuntu-latest
+    needs: build
+    if: "!failure() && !cancelled() && github.event_name == 'pull_request' && github.base_ref == 'develop'"
+    permissions:
+      # Permissions are needed to interact with GitHub's OIDC Token endpoint
+      id-token: write
+      contents: read
+    environment:
+      name: dev
+      url: https://${{ env.ENV }}.chiemerie.com
+    env:
+      STACK_NAME: ${{ secrets.STACK_NAME }}  # different for each environment
+      BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}
+      ENV: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-duration-seconds: 900
+          aws-region: eu-central-1
+
+      - name: Infrastructure Provisioning
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{ env.STACK_NAME }}
+          template: .github/cloudformation/template/cloudformation.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >-
+            AcmCertificateArn=${{ secrets.ACM_CERTIFICATE_ARN }},
+            BucketPartName=${{ env.BUCKET_PART_NAME }},
+            Env=${{ env.ENV }},
+            Route53HostedZoneID=${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+
+      - name: Get build Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+          path: build
+
+      - name: Deploy to S3
+        run: aws s3 sync build s3://$ENV-$BUCKET_PART_NAME --delete
+
+      - name: Get Cloudfront distro ID and create Invalidation
+        run: |
+          DISTRO_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+          --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistroID'].OutputValue" \
+          --output text)
+          aws cloudfront create-invalidation --distribution-id $DISTRO_ID --paths /\*
+
+  deploy-qa:
+    name: Deploy to qa
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: "!failure() && !cancelled() && github.event_name == 'pull_request' && github.base_ref == 'master'"
+    permissions:
+      # Permissions are needed to interact with GitHub's OIDC Token endpoint
+      id-token: write
+      contents: read
+    environment:
+      name: qa
+      url: https://${{ env.ENV }}.chiemerie.com
+    env:
+      STACK_NAME: ${{ secrets.STACK_NAME }}  # different for each environment
+      BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}
+      ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-duration-seconds: 900
+          aws-region: eu-central-1
+
+      - name: Infrastructure Provisioning
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{ env.STACK_NAME }}
+          template: .github/cloudformation/template/cloudformation.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >-
+            AcmCertificateArn=${{ secrets.ACM_CERTIFICATE_ARN }},
+            BucketPartName=${{ env.BUCKET_PART_NAME }},
+            Env=${{ env.ENV }},
+            Route53HostedZoneID=${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+
+      - name: Get build Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+          path: build
+
+      - name: Deploy to S3
+        run: aws s3 sync build s3://$ENV-$BUCKET_PART_NAME --delete
+
+      - name: Get Cloudfront distro ID and create Invalidation
+        run: |
+          DISTRO_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+          --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistroID'].OutputValue" \
+          --output text)
+          aws cloudfront create-invalidation --distribution-id $DISTRO_ID --paths /\*
+
+  deploy-prod:
+    name: Deploy to prod
+    runs-on: ubuntu-latest
+    needs: deploy-qa
+    if: "!failure() && !cancelled() && github.event.ref == 'refs/heads/master'"
+    permissions:
+      # Permissions are needed to interact with GitHub's OIDC Token endpoint
+      id-token: write
+      contents: read
+    environment:
+      name: prod
+      url: https://www.chiemerie.com
+    env:
+      STACK_NAME: ${{ secrets.STACK_NAME }}  # different for each environment
+      BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}
+      ENV: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-duration-seconds: 900
+          aws-region: eu-central-1
+
+      - name: Infrastructure Provisioning
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{ env.STACK_NAME }}
+          template: .github/cloudformation/template/cloudformation.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >-
+            AcmCertificateArn=${{ secrets.ACM_CERTIFICATE_ARN }},
+            BucketPartName=${{ env.BUCKET_PART_NAME }},
+            Env=${{ env.ENV }},
+            Route53HostedZoneID=${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+
+      - name: Get build Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+          path: build
+
+      - name: Deploy to S3
+        run: aws s3 sync build s3://$ENV-$BUCKET_PART_NAME --delete
+
+      - name: Get Cloudfront distro ID and create Invalidation
+        run: |
+          DISTRO_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+          --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistroID'].OutputValue" \
+          --output text)
+          aws cloudfront create-invalidation --distribution-id $DISTRO_ID --paths /\*

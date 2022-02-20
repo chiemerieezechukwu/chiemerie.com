@@ -1,0 +1,8 @@
+body {
+  background-image: url("img.webp");
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  font-family: "Open Sans Condensed", sans-serif;
+  height: 100vh;
+}

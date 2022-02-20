@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: A stack to provision infrastructure for static s3 web hosting
+
+Parameters:
+
+  Env:
+    Description: Name of the environment
+    Type: String
+
+  BucketPartName:
+    Description: S3 bucket name
+    Type: String
+
+  CloudFrontEnabled:
+    Description: >
+      From this field, you can enable or disable the selected distribution
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
+
+  CloudFrontPriceClass:
+    Description: Price class
+    Type: String
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+    Default: PriceClass_200
+
+  AcmCertificateArn:
+    Type: String
+    Description: >
+      The ARN of the SSL certificate to use for the CloudFront distribution
+
+  Route53HostedZoneID:
+    Type: String
+
+  CloudfrontHostedZoneId:
+    Type: String
+    Default: Z2FDTNDATAQYW2
+  
+Conditions:
+  isProd: !Equals [ !Ref Env, 'prod' ]
+  notProd: !Not [ !Condition isProd ]
+
+Mappings:
+
+  ManagedCloudFrontCachePolicyID:
+    CachingOptimized:
+      ID: 658327ea-f89d-4fab-a63d-7e88639e58f6
+    CachingOptimizedForUncompressedObjects:
+      ID: b2884449-e4de-46a7-ac36-70bc7f1ddd6d
+    CachingDisabled:
+      ID: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+    Elemental-MediaPackage:
+      ID: 08627262-05a9-4f76-9ded-b50ca2e3a84f
+    Amplify:
+      ID: 2e54312d-136d-493c-8eb9-b001f22f67d2
+
+Resources:
+  S3BucketForWebsiteContent:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${Env}-${BucketPartName}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  S3BucketForWebsiteContentPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketForWebsiteContent
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub arn:aws:s3:::${S3BucketForWebsiteContent}/*
+            Principal:
+              CanonicalUser: !GetAtt OriginAccessIdentity.S3CanonicalUserId
+
+  OriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub access-identity-${S3BucketForWebsiteContent}.s3.${AWS::Region}.amazonaws.com
+
+  CloudfrontDistro:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultRootObject: index.html
+        Enabled: !Ref CloudFrontEnabled
+        HttpVersion: http2
+        IPV6Enabled: true
+        PriceClass: !Ref CloudFrontPriceClass
+        CNAMEs: !If
+          - notProd
+          - - !Sub ${Env}.chiemerie.com
+          - - www.chiemerie.com
+            - chiemerie.com
+        Aliases: !If
+          - notProd
+          - - !Sub ${Env}.chiemerie.com
+          - - www.chiemerie.com
+            - chiemerie.com
+        DefaultCacheBehavior:
+          Compress: true
+          AllowedMethods:
+            - GET
+            - HEAD
+          TargetOriginId: !Ref S3BucketForWebsiteContent
+          CachePolicyId: !FindInMap [ ManagedCloudFrontCachePolicyID, CachingOptimized, ID ]
+          ViewerProtocolPolicy: redirect-to-https
+        Origins:
+          - DomainName: !Sub ${S3BucketForWebsiteContent}.s3.${AWS::Region}.amazonaws.com
+            Id: !Ref S3BucketForWebsiteContent
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OriginAccessIdentity}
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+
+  EnvBasedDomainDNS:
+    Type: AWS::Route53::RecordSet
+    Condition: notProd
+    DependsOn: CloudfrontDistro
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt CloudfrontDistro.DomainName
+        HostedZoneId: !Ref CloudfrontHostedZoneId
+      HostedZoneId: !Ref Route53HostedZoneID
+      Name: !Sub ${Env}.chiemerie.com
+      Type: A
+
+  WWWProdDomainDNS:
+    Type: AWS::Route53::RecordSet
+    Condition: isProd
+    DependsOn: CloudfrontDistro
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt CloudfrontDistro.DomainName
+        HostedZoneId: !Ref CloudfrontHostedZoneId
+      HostedZoneId: !Ref Route53HostedZoneID
+      Name: www.chiemerie.com
+      Type: A
+
+  PlainProdDomainDNS:
+    Type: AWS::Route53::RecordSet
+    Condition: isProd
+    DependsOn: CloudfrontDistro
+    Properties:
+      AliasTarget:
+        DNSName: !Ref WWWProdDomainDNS
+        HostedZoneId: !Ref Route53HostedZoneID
+      HostedZoneId: !Ref Route53HostedZoneID
+      Name: chiemerie.com
+      Type: A
+
+Outputs:
+  CloudFrontDistroID:
+    Description: CloudFront distribution ID
+    Value: !Ref CloudfrontDistro
+
+  S3BucketName:
+    Description: S3 Website Bucket Name
+    Value: !Ref S3BucketForWebsiteContent
