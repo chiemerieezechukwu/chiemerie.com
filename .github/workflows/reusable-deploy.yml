@@ -1,0 +1,74 @@
+on:
+  workflow_call:
+    inputs:
+      ENVIRONMENT:
+        required: true
+        type: string
+      ENVIRONMENT_URL:
+        required: true
+        type: string
+    secrets:
+      STACK_NAME:
+        required: true
+      BUCKET_PART_NAME:
+        required: true
+      AWS_ROLE_TO_ASSUME:
+        required: true
+      ACM_CERTIFICATE_ARN:
+        required: true
+      ROUTE53_HOSTED_ZONE_ID:
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.ENVIRONMENT }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Permissions are needed to interact with GitHub's OIDC Token endpoint
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ inputs.ENVIRONMENT }}
+      url: ${{ inputs.ENVIRONMENT_URL }}
+    env:
+      STACK_NAME: ${{ secrets.STACK_NAME }}  # different for each environment
+      BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}
+      ENV: ${{ inputs.ENVIRONMENT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-duration-seconds: 900
+          aws-region: eu-central-1
+
+      - name: Infrastructure Provisioning
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{ env.STACK_NAME }}
+          template: .github/cloudformation/template/cloudformation.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >-
+            AcmCertificateArn=${{ secrets.ACM_CERTIFICATE_ARN }},
+            BucketPartName=${{ env.BUCKET_PART_NAME }},
+            Env=${{ env.ENV }},
+            Route53HostedZoneID=${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+      - name: Get build Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+          path: build
+
+      - name: Deploy to S3
+        run: aws s3 sync build s3://$ENV-$BUCKET_PART_NAME --delete
+
+      - name: Get Cloudfront distro ID and create Invalidation
+        run: |
+          DISTRO_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+          --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistroID'].OutputValue" \
+          --output text)
+          aws cloudfront create-invalidation --distribution-id $DISTRO_ID --paths /\*
