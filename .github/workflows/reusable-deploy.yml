@@ -1,3 +1,5 @@
+name: Reusable callable deploy workflow
+
 on:
   workflow_call:
     inputs:
