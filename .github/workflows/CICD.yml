@@ -7,7 +7,9 @@ on:
   pull_request:
     branches:
       - master
-      - develop
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 jobs:
@@ -48,11 +50,12 @@ jobs:
 
   deploy-dev:
     needs: build
-    if: "!failure() && !cancelled() && github.event_name == 'pull_request' && github.base_ref == 'develop'"
+    if: "!failure() && !cancelled() && github.event_name == 'pull_request' && github.base_ref == 'master'"
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       ENVIRONMENT: dev
       ENVIRONMENT_URL: https://dev.chiemerie.com
+      RELEASE_VERSION: 0.0.0-dev
     secrets:
       STACK_NAME: ${{ secrets.STACK_NAME }} # different for each environment
       BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}
@@ -62,11 +65,12 @@ jobs:
 
   deploy-qa:
     needs: deploy-dev
-    if: "!failure() && !cancelled() && github.event_name == 'pull_request' && github.base_ref == 'master'"
+    if: "!failure() && !cancelled() && github.event.ref == 'refs/heads/master'"
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       ENVIRONMENT: test
       ENVIRONMENT_URL: https://test.chiemerie.com
+      RELEASE_VERSION: 0.0.0-test
     secrets:
       STACK_NAME: ${{ secrets.STACK_NAME }} # different for each environment
       BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}
@@ -76,11 +80,12 @@ jobs:
 
   deploy-prod:
     needs: deploy-qa
-    if: "!failure() && !cancelled() && github.event.ref == 'refs/heads/master'"
+    if: "!failure() && !cancelled() && github.event_name == 'release'"
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       ENVIRONMENT: prod
       ENVIRONMENT_URL: https://www.chiemerie.com
+      RELEASE_VERSION: ${{ github.event.release.tag_name }}
     secrets:
       STACK_NAME: ${{ secrets.STACK_NAME }} # different for each environment
       BUCKET_PART_NAME: ${{ secrets.BUCKET_PART_NAME }}

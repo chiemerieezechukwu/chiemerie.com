@@ -40,6 +40,11 @@ Parameters:
   CloudfrontHostedZoneId:
     Type: String
     Default: Z2FDTNDATAQYW2
+
+  ReleaseVersion:
+    Type: String
+    Description: >
+      The path to use for the origin which corresponds to the release version
   
 Conditions:
   isProd: !Equals [ !Ref Env, 'prod' ]
@@ -121,6 +126,7 @@ Resources:
             Id: !Ref S3BucketForWebsiteContent
             S3OriginConfig:
               OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OriginAccessIdentity}
+            OriginPath: !Sub /${ReleaseVersion}
         ViewerCertificate:
           AcmCertificateArn: !Ref AcmCertificateArn
           MinimumProtocolVersion: TLSv1.2_2021
