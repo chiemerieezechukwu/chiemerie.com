@@ -12,14 +12,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Checkout release action
-        uses: actions/checkout@v3
-        with:
-          repository: chiemerieezechukwu/semantic-release
-          ref: main
-          path: ./.github/semantic-release
-          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Create Release
-        uses: ./.github/semantic-release
+        uses: chiemerieezechukwu/semantic-release@main
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
