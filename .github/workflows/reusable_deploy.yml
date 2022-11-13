@@ -23,29 +23,9 @@ jobs:
       - name: Linting started
         run: echo "linting"
 
-  build:
-    name: Build Artifact
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Set Node version
-        uses: actions/setup-node@v2
-        with:
-          node-version: 17
-      - name: Build App
-        run: npm ci && npm run build
-      - name: Archive build output
-        uses: actions/upload-artifact@v2
-        with:
-          name: build
-          path: build
-          retention-days: 1
-
   deploy:
     name: Deploy to ${{ inputs.ENVIRONMENT }}
-    needs: build
+    needs: lint
     runs-on: ubuntu-latest
     permissions:
       # Permissions are needed to interact with GitHub's OIDC Token endpoint
@@ -80,13 +60,12 @@ jobs:
             Env=${{ env.ENV }},
             Route53HostedZoneID=${{ secrets.ROUTE53_HOSTED_ZONE_ID }},
             ReleaseVersion=${{ env.RELEASE_VERSION }}
-      - name: Get build Artifact
-        uses: actions/download-artifact@v2
+      - name: Package & Upload Artefact
+        uses: ./.github/composites/package_artefact
         with:
-          name: build
-          path: build
-      - name: Deploy to S3
-        run: aws s3 sync build s3://$ENV-$BUCKET_PART_NAME/$RELEASE_VERSION --delete
+          ENV: ${{ env.ENV }}
+          BUCKET_PART_NAME: ${{ env.BUCKET_PART_NAME }}
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
       - name: Get Cloudfront distro ID and create Invalidation
         run: |
           DISTRO_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
