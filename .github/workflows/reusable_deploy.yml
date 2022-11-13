@@ -45,6 +45,7 @@ jobs:
 
   deploy:
     name: Deploy to ${{ inputs.ENVIRONMENT }}
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       # Permissions are needed to interact with GitHub's OIDC Token endpoint
