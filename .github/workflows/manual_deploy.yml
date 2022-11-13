@@ -1,0 +1,26 @@
+name: Manual Deployment Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Select the environment to deploy to
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      release_version:
+        description: Enter the release version to deploy
+        required: true
+        type: string
+
+jobs:
+  manual-deploy:
+    name: Manual Deploy to ${{ inputs.environment }}
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      ENVIRONMENT: ${{ inputs.environment }}
+      ENVIRONMENT_URL: ${{ (inputs.environment_url == prod && https://www.chiemerie.com) || https://dev.chiemerie.com }}
+      RELEASE_VERSION: ${{ inputs.release_version }}
+    secrets: inherit
