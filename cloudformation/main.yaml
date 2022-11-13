@@ -84,7 +84,7 @@ Resources:
         Statement:
           - Effect: Allow
             Action: s3:GetObject
-            Resource: !Sub arn:aws:s3:::${S3BucketForWebsiteContent}/*
+            Resource: !Sub arn:${AWS::Partition}:s3:::${S3BucketForWebsiteContent}/*
             Principal:
               CanonicalUser: !GetAtt OriginAccessIdentity.S3CanonicalUserId
 
@@ -135,7 +135,6 @@ Resources:
   EnvBasedDomainDNS:
     Type: AWS::Route53::RecordSet
     Condition: notProd
-    DependsOn: CloudfrontDistro
     Properties:
       AliasTarget:
         DNSName: !GetAtt CloudfrontDistro.DomainName
@@ -147,7 +146,6 @@ Resources:
   WWWProdDomainDNS:
     Type: AWS::Route53::RecordSet
     Condition: isProd
-    DependsOn: CloudfrontDistro
     Properties:
       AliasTarget:
         DNSName: !GetAtt CloudfrontDistro.DomainName
