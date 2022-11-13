@@ -18,7 +18,7 @@ on:
 jobs:
   manual-deploy:
     name: Manual Deploy to ${{ inputs.environment }}
-    uses: ./.github/workflows/reusable-deploy.yml
+    uses: ./.github/workflows/reusable_deploy.yml
     with:
       ENVIRONMENT: ${{ inputs.environment }}
       ENVIRONMENT_URL: ${{ (inputs.environment_url == prod && https://www.chiemerie.com) || https://dev.chiemerie.com }}

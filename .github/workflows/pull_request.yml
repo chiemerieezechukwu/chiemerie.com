@@ -8,7 +8,7 @@ on:
 jobs:
   test-deploy-dev:
     name: Test & Deploy to Dev
-    uses: ./.github/workflows/reusable-deploy.yml
+    uses: ./.github/workflows/reusable_deploy.yml
     with:
       ENVIRONMENT: dev
       ENVIRONMENT_URL: https://dev.chiemerie.com
