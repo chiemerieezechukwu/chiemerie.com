@@ -1,0 +1,31 @@
+name: Package & Upload Artefact
+description: |
+  This composite workflow builds and uploads the artefact to the specified environment
+inputs:
+  ENV:
+    description: The environment to deploy to
+    required: true
+    type: string
+  RELEASE_VERSION:
+    description: The release tag to associate with the artefact
+    required: true
+    type: string
+  BUCKET_PART_NAME:
+    description: The part of the bucket name that is common to all environments
+    required: true
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 17
+    - name: Build Artefact
+      run: npm ci && npm run build
+      shell: bash
+    - name: Upload to s3 ${{ inputs.ENV }} bucket
+      run: |
+        aws s3 sync build s3://${{ inputs.ENV }}-${{ inputs.BUCKET_PART_NAME }}/${{ inputs.RELEASE_VERSION }} --delete
+      shell: bash

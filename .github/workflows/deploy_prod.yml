@@ -1,0 +1,16 @@
+name: Prod Deployment Workflow
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  deploy-prod:
+    name: Deploy to Production
+    uses: ./.github/workflows/reusable_deploy.yml
+    with:
+      ENVIRONMENT: prod
+      ENVIRONMENT_URL: https://www.chiemerie.com
+      RELEASE_VERSION: ${{ github.event.release.tag_name }}
+    secrets: inherit
